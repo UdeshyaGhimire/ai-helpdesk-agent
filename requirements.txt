@@ -4,3 +4,5 @@ pydantic
 python-dotenv
 pytest
 httpx
+boto3
+boto3[crt]
