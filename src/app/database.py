@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 DB_NAME = "helpdesk.db"
@@ -16,9 +17,19 @@ def init_db():
             summary TEXT NOT NULL,
             answer TEXT NOT NULL,
             needs_human BOOLEAN NOT NULL,
-            status TEXT NOT NULL DEFAULT 'Open'
+            status TEXT NOT NULL DEFAULT 'Open',
+            sources TEXT
         )
     """)
+
+    cursor.execute("PRAGMA table_info(tickets)")
+    columns = [column[1] for column in cursor.fetchall()]
+
+    if "sources" not in columns:
+        cursor.execute("""
+            ALTER TABLE tickets
+            ADD COLUMN sources TEXT
+        """)
 
     conn.commit()
     conn.close()
@@ -31,10 +42,13 @@ def create_ticket(
     summary,
     answer,
     needs_human,
-    status="Open"
+    status="Open",
+    sources=None,
 ):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+
+    sources_json = json.dumps(sources or [])
 
     cursor.execute("""
         INSERT INTO tickets (
@@ -44,9 +58,10 @@ def create_ticket(
             summary,
             answer,
             needs_human,
-            status
+            status,
+            sources
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         message,
         category,
@@ -54,7 +69,8 @@ def create_ticket(
         summary,
         answer,
         needs_human,
-        status
+        status,
+        sources_json,
     ))
 
     ticket_id = cursor.lastrowid
@@ -78,7 +94,8 @@ def get_all_tickets():
             summary,
             answer,
             needs_human,
-            status
+            status,
+            sources
         FROM tickets
         ORDER BY id DESC
     """)
@@ -86,7 +103,16 @@ def get_all_tickets():
     rows = cursor.fetchall()
     conn.close()
 
-    return [dict(row) for row in rows]
+    tickets = []
+
+    for row in rows:
+        ticket = dict(row)
+        ticket["sources"] = json.loads(
+            ticket["sources"] or "[]"
+        )
+        tickets.append(ticket)
+
+    return tickets
 
 
 def get_ticket_by_id(ticket_id):
@@ -103,7 +129,8 @@ def get_ticket_by_id(ticket_id):
             summary,
             answer,
             needs_human,
-            status
+            status,
+            sources
         FROM tickets
         WHERE id = ?
     """, (ticket_id,))
@@ -114,7 +141,13 @@ def get_ticket_by_id(ticket_id):
     if row is None:
         return None
 
-    return dict(row)
+    ticket = dict(row)
+
+    ticket["sources"] = json.loads(
+        ticket["sources"] or "[]"
+    )
+
+    return ticket
 
 def update_ticket_status(ticket_id, status):
     conn = sqlite3.connect(DB_NAME)

@@ -23,8 +23,8 @@ class TicketResponse(BaseModel):
     answer: str
     needs_human: bool
     status: str
+    sources: list[str]
 
 
 class TicketStatusUpdate(BaseModel):
     status: str
-    
