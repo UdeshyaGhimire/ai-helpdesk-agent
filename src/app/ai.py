@@ -31,7 +31,7 @@ bedrock_agent_runtime = boto3.client(
 )
 
 
-def retrieve_knowledge(message: str) -> str:
+def retrieve_knowledge(message: str):
     print("RAG: starting knowledge retrieval")
     print("RAG: knowledge base configured:", bool(KNOWLEDGE_BASE_ID))
 
@@ -52,9 +52,13 @@ def retrieve_knowledge(message: str) -> str:
     results = response.get("retrievalResults", [])
 
     if not results:
-        return "No relevant approved knowledge was found."
+        return (
+            "No relevant approved knowledge was found.",
+            []
+        )
 
     context_parts = []
+    sources = []
 
     for result in results:
         content = result.get("content", {})
@@ -63,11 +67,25 @@ def retrieve_knowledge(message: str) -> str:
         if text:
             context_parts.append(text)
 
-    return "\n\n".join(context_parts)
+        location = result.get("location", {})
+
+        if location.get("type") == "S3":
+            s3_location = location.get("s3Location", {})
+            source_uri = s3_location.get("uri")
+
+            if source_uri:
+                source_name = source_uri.split("/")[-1]
+
+                if source_name not in sources:
+                    sources.append(source_name)
+
+    context = "\n\n".join(context_parts)
+
+    return context, sources
 
 
 def generate_helpdesk_response(message: str) -> HelpdeskResponse:
-    knowledge_context = retrieve_knowledge(message)
+    knowledge_context, sources = retrieve_knowledge(message)
 
     prompt = f"""
 You are an IT helpdesk assistant.
@@ -176,4 +194,5 @@ Return JSON in this format:
         summary=data["summary"],
         answer=data["answer"],
         needs_human=data["needs_human"],
+        sources=sources,
     )

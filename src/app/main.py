@@ -54,6 +54,7 @@ def chat(request: ChatRequest):
             "answer": result.answer,
             "needs_human": result.needs_human,
             "status": ticket_status,
+            "sources": result.sources,
         }
 
     except Exception as e:

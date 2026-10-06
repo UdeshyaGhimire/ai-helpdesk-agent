@@ -11,6 +11,7 @@ class HelpdeskResponse(BaseModel):
     summary: str
     answer: str
     needs_human: bool
+    sources: list[str]
 
 
 class TicketResponse(BaseModel):
