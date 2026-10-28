@@ -14,6 +14,11 @@ from .schemas import (
     TicketStatusUpdate,
 )
 
+from .exceptions import (
+    AIResponseError,
+    AIServiceError,
+    KnowledgeBaseError,
+)
 
 app = FastAPI(title="AI IT Helpdesk Agent")
 
@@ -57,9 +62,31 @@ def chat(request: ChatRequest):
             "sources": result.sources,
         }
 
-    except Exception as e:
-        print("CHAT ERROR:", repr(e))
-        raise
+    except KnowledgeBaseError as error:
+        raise HTTPException(
+        status_code=503,
+        detail=str(error),
+    )
+
+    except AIServiceError as error:
+        raise HTTPException(
+        status_code=503,
+        detail=str(error),
+    )
+
+    except AIResponseError as error:
+        raise HTTPException(
+        status_code=502,
+        detail=str(error),
+    )
+
+    except Exception as error:
+        print("UNEXPECTED ERROR:", repr(error))
+
+        raise HTTPException(
+        status_code=500,
+        detail="An unexpected server error occurred.",
+    )
 
 
 @app.get("/tickets", response_model=list[TicketResponse])

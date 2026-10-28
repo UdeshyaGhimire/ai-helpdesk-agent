@@ -2,9 +2,18 @@ import json
 import os
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
+from pydantic import ValidationError
 
+from .exceptions import (
+    AIResponseError,
+    AIServiceError,
+    KnowledgeBaseError,
+)
 from .schemas import HelpdeskResponse
+
+
 
 
 load_dotenv()
@@ -33,21 +42,26 @@ bedrock_agent_runtime = boto3.client(
 
 def retrieve_knowledge(message: str):
     print("RAG: starting knowledge retrieval")
-    print("RAG: knowledge base configured:", bool(KNOWLEDGE_BASE_ID))
 
-    response = bedrock_agent_runtime.retrieve(
-        knowledgeBaseId=KNOWLEDGE_BASE_ID,
-        retrievalQuery={
-            "text": message
-        },
-        retrievalConfiguration={
-            "managedSearchConfiguration": {
-                "numberOfResults": 3
+    try:
+        response = bedrock_agent_runtime.retrieve(
+            knowledgeBaseId=KNOWLEDGE_BASE_ID,
+            retrievalQuery={
+                "text": message
+            },
+            retrievalConfiguration={
+                "managedSearchConfiguration": {
+                    "numberOfResults": 3
+                }
             }
-        }
-    )
+        )
 
-    print("RAG: retrieval successful")
+    except (ClientError, BotoCoreError) as error:
+        print("KNOWLEDGE BASE ERROR:", repr(error))
+
+        raise KnowledgeBaseError(
+            "Unable to retrieve approved IT knowledge."
+        ) from error
 
     results = response.get("retrievalResults", [])
 
@@ -166,33 +180,57 @@ Return JSON in this format:
 }}
 """
 
-    response = bedrock.converse(
-        modelId=MODEL_ID,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "text": prompt
-                    }
-                ],
-            }
-        ],
-        inferenceConfig={
-            "maxTokens": 500,
-            "temperature": 0.2,
-        },
-    )
+    try:
+        response = bedrock.converse(
+            modelId=MODEL_ID,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "text": prompt
+                        }
+                    ],
+                }
+            ],
+            inferenceConfig={
+                "maxTokens": 500,
+                "temperature": 0.2,
+            },
+        )
+
+    except (ClientError, BotoCoreError) as error:
+        print("BEDROCK MODEL ERROR:", repr(error))
+
+        raise AIServiceError(
+            "The AI service is currently unavailable."
+        ) from error
 
     model_text = response["output"]["message"]["content"][0]["text"]
 
-    data = json.loads(model_text)
+    try:
+        data = json.loads(model_text)
 
-    return HelpdeskResponse(
-        category=data["category"],
-        priority=data["priority"],
-        summary=data["summary"],
-        answer=data["answer"],
-        needs_human=data["needs_human"],
-        sources=sources,
-    )
+    except json.JSONDecodeError as error:
+        print("INVALID AI JSON:", model_text)
+
+        raise AIResponseError(
+            "The AI returned an invalid structured response."
+        ) from error
+
+    try:
+        return HelpdeskResponse(
+            category=data["category"],
+            priority=data["priority"],
+            summary=data["summary"],
+            answer=data["answer"],
+            needs_human=data["needs_human"],
+            sources=sources,
+        )
+
+    except (KeyError, ValidationError) as error:
+        print("INVALID AI RESPONSE STRUCTURE:", repr(error))
+
+        raise AIResponseError(
+            "The AI response did not match the required helpdesk format."
+        ) from error
